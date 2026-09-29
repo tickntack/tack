@@ -1,0 +1,4 @@
+# Daten gehören nie in dieses Repository
+*.csv
+*.tsv
+*.json

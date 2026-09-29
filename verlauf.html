@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://api.github.com; form-action 'none'; base-uri 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Verlauf</title>
+<style>
+  :root{
+    --paper:#DCDFE2;
+    --card:#ECEEF0;
+    --ink:#171C20;
+    --muted:#6A757D;
+    --line:#C3C9CE;
+    --on:#1F5C5C;
+    --off:#CBD1D5;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, ui-serif, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --paper:#15191C; --card:#1D2327; --ink:#E2E7EA; --muted:#8B979E;
+      --line:#2E363B; --on:#57B3A6; --off:#262E33;
+    }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--paper); color:var(--ink);
+    font-family:var(--sans); font-size:16px; line-height:1.5;
+    padding: calc(2.5rem + env(safe-area-inset-top,0px)) 1.25rem calc(4rem + env(safe-area-inset-bottom,0px));
+    -webkit-text-size-adjust:100%;
+  }
+  .wrap{max-width:60rem;margin:0 auto}
+
+  header{margin-bottom:2rem}
+  h1{font-family:var(--serif);font-weight:400;font-size:2.25rem;letter-spacing:-0.01em;margin:0 0 .25rem}
+  .sub{color:var(--muted);font-size:.9375rem;margin:0}
+
+  .load{border:1px solid var(--line);background:var(--card);padding:1.5rem;margin-bottom:2.25rem}
+  .load p{margin:0 0 1rem;max-width:52ch;color:var(--muted);font-size:.9375rem}
+  .load.compact{padding:.875rem 1rem}
+  .load.compact p{margin:0 0 .75rem;font-size:.875rem}
+  .load.stale{border-left:3px solid var(--on)}
+  .load.stale p{color:var(--ink)}
+  body.dragging .load{border-color:var(--on);border-style:dashed}
+  .row{display:flex;gap:.625rem;flex-wrap:wrap;align-items:center}
+
+  button{font:inherit;font-size:.9375rem;color:var(--paper);background:var(--ink);border:0;padding:.5rem 1rem;cursor:pointer}
+  button:hover{background:var(--on)}
+  button:focus-visible{outline:2px solid var(--on);outline-offset:2px}
+  button.ghost{background:transparent;color:var(--muted);border:1px solid var(--line)}
+  button.ghost:hover{color:var(--ink);background:transparent;border-color:var(--ink)}
+  .err{color:#A8352B;font-size:.875rem;margin:.75rem 0 0}
+  @media (prefers-color-scheme: dark){.err{color:#E8837A}}
+
+  .tabs{display:flex;gap:0;border:1px solid var(--line);width:max-content;margin-bottom:1.75rem}
+  .tabs button{background:transparent;color:var(--muted);padding:.4375rem .9375rem;font-size:.875rem;border-right:1px solid var(--line)}
+  .tabs button:last-child{border-right:0}
+  .tabs button:hover{background:transparent;color:var(--ink)}
+  .tabs button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));gap:1px;background:var(--line);border:1px solid var(--line);margin-bottom:2.5rem}
+  .stat{background:var(--card);padding:1rem 1.125rem}
+  .stat b{display:block;font-family:var(--serif);font-weight:400;font-size:2rem;line-height:1.1;letter-spacing:-0.02em}
+  .stat span{display:block;font-size:.8125rem;color:var(--muted);margin-top:.25rem}
+
+  /* Monatsansicht */
+  .navbar{display:flex;align-items:baseline;gap:1rem;margin-bottom:.875rem;flex-wrap:wrap}
+  .navbar h2{font-family:var(--serif);font-weight:400;font-size:1.75rem;margin:0;letter-spacing:-0.01em;min-width:9.5rem}
+  .navbar .count{font-size:.875rem;color:var(--muted)}
+  .navbar .arrows{display:flex;gap:.375rem;margin-left:auto}
+  .navbar .arrows button{padding:.25rem .75rem;font-size:1.125rem;line-height:1.3}
+  .navbar .arrows button[disabled]{opacity:.3;cursor:default}
+  .navbar .arrows button[disabled]:hover{background:var(--ink)}
+
+  .month{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;max-width:30rem}
+  .dow{font-size:.75rem;color:var(--muted);text-align:center;padding-bottom:.25rem}
+  .day{
+    aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;
+    background:var(--off);color:var(--muted);font-size:.875rem;border-radius:2px;
+  }
+  .day.on{background:var(--on);color:#fff;font-weight:600}
+  @media (prefers-color-scheme: dark){.day.on{color:#0E1618}}
+  .day.pad{background:transparent}
+  .day.outside{background:transparent;border:1px dashed var(--line);color:var(--line)}
+  .day.tap{cursor:pointer;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+  .day.tap:focus-visible{outline:2px solid var(--on);outline-offset:1px}
+  .day.today{box-shadow:inset 0 0 0 2px var(--ink)}
+  .day.busy{opacity:.5}
+
+  /* Verbindung */
+  .setup label{display:block;margin:0 0 .875rem;font-size:.875rem;color:var(--muted)}
+  .setup input{display:block;width:100%;max-width:26rem;margin-top:.25rem;padding:.5rem .625rem;font:inherit;font-size:1rem;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:0}
+  .setup input:focus{outline:2px solid var(--on);outline-offset:0;border-color:var(--on)}
+  button.link{background:none;border:0;padding:0;color:var(--muted);text-decoration:underline;font-size:inherit}
+  button.link:hover{background:none;color:var(--ink)}
+
+  /* Jahresansicht */
+  .year{margin-bottom:2.25rem}
+  .year h2{font-family:var(--serif);font-weight:400;font-size:1.375rem;margin:0 0 .125rem;display:flex;align-items:baseline;gap:.75rem;flex-wrap:wrap}
+  .year h2 em{font-family:var(--sans);font-style:normal;font-size:.8125rem;color:var(--muted)}
+  .scroll{overflow-x:auto;padding:.5rem 0 .25rem;-webkit-overflow-scrolling:touch}
+  .grid{display:grid;grid-auto-flow:column;grid-template-rows:repeat(7,11px);gap:3px;width:max-content}
+  .cell{width:11px;height:11px;background:var(--off);border-radius:1px}
+  .cell.on{background:var(--on)}
+  .cell.void{background:transparent}
+  .months{display:grid;gap:3px;width:max-content;font-size:.6875rem;color:var(--muted);margin-bottom:.25rem}
+
+  .legend{display:flex;align-items:center;gap:.4rem;font-size:.8125rem;color:var(--muted);margin-top:1.5rem}
+  .legend .cell{display:inline-block}
+
+  footer{margin-top:3rem;padding-top:1.25rem;border-top:1px solid var(--line);color:var(--muted);font-size:.8125rem}
+  footer p{margin:0 0 .5rem;max-width:60ch}
+  .hidden{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>Verlauf</h1>
+    <p class="sub">Tagesverlauf aus einer CSV-Datei in deinem eigenen Repository.</p>
+  </header>
+
+  <div class="load" id="load">
+    <p id="loadText">Noch keine Verbindung eingerichtet.</p>
+    <div class="row">
+      <button id="reload" class="hidden">Neu laden</button>
+      <button id="settings" class="ghost">Verbindung</button>
+    </div>
+    <p class="err hidden" id="err"></p>
+  </div>
+
+  <form class="load setup hidden" id="setup" autocomplete="off" novalidate>
+    <p>Die Daten liegen als CSV in einem privaten Repository auf GitHub. Der Token sollte nur für dieses eine Repository gelten, mit „Contents: Read and write“. Alles hier Eingetragene bleibt im Speicher dieses Browsers.</p>
+    <label>Konto
+      <input id="cfgOwner" autocapitalize="off" autocorrect="off" spellcheck="false">
+    </label>
+    <label>Repository
+      <input id="cfgRepo" autocapitalize="off" autocorrect="off" spellcheck="false">
+    </label>
+    <label>Datei im Repository
+      <input id="cfgPath" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="daten.csv">
+    </label>
+    <label>Token
+      <input id="cfgToken" type="password" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off">
+    </label>
+    <div class="row">
+      <button type="submit" id="connect">Verbinden</button>
+      <button type="button" id="cancelSetup" class="ghost">Abbrechen</button>
+      <button type="button" id="disconnect" class="ghost">Verbindung trennen</button>
+    </div>
+    <p class="err hidden" id="setupErr"></p>
+  </form>
+
+  <main id="out" class="hidden">
+    <div class="tabs" role="group" aria-label="Ansicht">
+      <button id="tabMonth" aria-pressed="true">Monat</button>
+      <button id="tabYear" aria-pressed="false">Jahre</button>
+    </div>
+    <div id="stats"></div>
+    <div id="viewMonth"></div>
+    <div id="viewYear" class="hidden"></div>
+  </main>
+
+  <footer>
+    <p>Diese Seite spricht ausschließlich mit api.github.com. Jede Änderung wird dort ein Commit und lässt sich über die Historie des Repositorys zurückholen. Ohne Netz zeigt sie den zuletzt geladenen Stand, ändern lässt sich dann nichts.</p>
+    <p>Ohne Verbindung ansehen: <button class="link" id="pick">CSV-Datei öffnen</button> – oder die Datei auf dieses Fenster ziehen. Dabei wird nichts gespeichert.</p>
+    <input type="file" id="file" accept=".csv,text/csv,text/plain" class="hidden">
+  </footer>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var KEY = "verlauf.csv";           // Zwischenstand für die Anzeige ohne Netz
+  var CFG = "verlauf.verbindung";    // {owner, repo, path, token}
+  var API = "https://api.github.com";
+  var fromCache = 0;
+  var mode = "";         // "live" (Repository), "cache" (Zwischenstand), "file" (Datei, nur Ansicht)
+  var remote = null;     // {sha, text, rows, lock} – Stand im Repository
+  var loadedAt = null;
+  var loading = false;
+  var queue = Promise.resolve();
+  var pending = Object.create(null);   // iso -> 0/1, Änderung unterwegs
+  var state = null;      // Auswertung
+  var cursor = null;     // {y, m} der gezeigte Monat
+  var el = function(id){ return document.getElementById(id); };
+  var out = el("out"), errBox = el("err"), load = el("load"), loadText = el("loadText");
+
+  var MONTHS = ["Januar","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
+  var MSHORT = ["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];
+  var DOW = ["Mo","Di","Mi","Do","Fr","Sa","So"];
+
+  /* ---------- CSV lesen ---------- */
+
+  function parseDate(s){
+    s = String(s).trim();
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+    if (m) return new Date(+m[1], +m[2]-1, +m[3]);
+    m = /^(\d{1,2})\.(\d{1,2})\.(\d{2,4})$/.exec(s);
+    if (m){ var y = +m[3]; if (y < 100) y += 2000; return new Date(y, +m[2]-1, +m[1]); }
+    return null;
+  }
+
+  function splitLine(line){
+    var sep = (line.indexOf(";") > -1 && line.indexOf(",") === -1) ? ";" : ",";
+    return line.split(sep).map(function(c){ return c.replace(/^"|"$/g, "").trim(); });
+  }
+
+  function iso(d){
+    return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+  }
+  function addDays(d, n){ var c = new Date(d); c.setDate(c.getDate()+n); return c; }
+  function fmt(d){
+    return String(d.getDate()).padStart(2,"0") + "." + String(d.getMonth()+1).padStart(2,"0") + "." + d.getFullYear();
+  }
+
+  function parse(text){
+    var lines = text.replace(/\r/g, "").split("\n").filter(function(l){ return l.trim() !== ""; });
+    if (!lines.length) throw new Error("Die Datei ist leer.");
+
+    var first = splitLine(lines[0]);
+    var hasHeader = parseDate(first[0]) === null;
+    var dateCol = 0, valCol = -1;
+
+    if (hasHeader){
+      var lower = first.map(function(h){ return h.toLowerCase(); });
+      var di = lower.indexOf("date");
+      if (di === -1) di = lower.indexOf("datum");
+      if (di > -1) dateCol = di;
+      ["done","value","wert","completed","erledigt"].forEach(function(name){
+        if (valCol === -1) valCol = lower.indexOf(name);
+      });
+      lines = lines.slice(1);
+    }
+
+    var map = Object.create(null), n = 0;
+    lines.forEach(function(line){
+      var cells = splitLine(line);
+      var d = parseDate(cells[dateCol] || "");
+      if (!d) return;
+      var v = 1;
+      if (valCol > -1 && cells[valCol] !== undefined){
+        var raw = cells[valCol].toLowerCase();
+        v = (raw === "1" || raw === "true" || raw === "ja" || raw === "yes" || raw === "x") ? 1 : 0;
+      }
+      map[iso(d)] = v;   // jüngster Eintrag pro Tag gilt
+      n++;
+    });
+
+    if (!n) throw new Error("In der Datei war keine Zeile mit einem lesbaren Datum. Erwartet wird 2024-03-17 oder 17.03.2024.");
+    return map;
+  }
+
+  /* ---------- Auswerten ---------- */
+
+  function today(){ var n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); }
+
+  // Live gilt der Zeitraum bis gestern; heute zählt nur mit, wenn abgehakt.
+  // Ohne Verbindung endet er beim letzten Tag der Daten – mit derselben Regel für heute.
+  function evalEnd(map){
+    var t = today();
+    if (map[iso(t)] === 1) return t;
+    if (mode === "live") return addDays(t, -1);
+    var keys = Object.keys(map).sort(), last = parseDate(keys[keys.length-1]);
+    return +last === +t ? addDays(t, -1) : last;
+  }
+
+  function analyse(map, fixedEnd){
+    var keys = Object.keys(map).sort();
+    var start = parseDate(keys[0]), end = fixedEnd || parseDate(keys[keys.length-1]);
+    var days = [], d = start;
+    while (d <= end){
+      days.push({ date: new Date(d), on: map[iso(d)] === 1 });
+      d = addDays(d, 1);
+    }
+    var on = 0, best = 0, run = 0, current = 0;
+    days.forEach(function(day){
+      if (day.on){ on++; run++; if (run > best) best = run; } else run = 0;
+    });
+    for (var i = days.length - 1; i >= 0 && days[i].on; i--) current++;
+
+    var window = Math.min(365, days.length);
+    var recentOn = 0;
+    for (var j = days.length - window; j < days.length; j++) if (days[j].on) recentOn++;
+
+    return { map: map, days: days, total: days.length, on: on, best: best, current: current,
+             start: start, end: end, window: window, recentOn: recentOn };
+  }
+
+  /* ---------- Kennzahlen ---------- */
+
+  function statBlock(value, label){
+    var s = document.createElement("div");
+    s.className = "stat";
+    var b = document.createElement("b"); b.textContent = value;
+    var t = document.createElement("span"); t.textContent = label;
+    s.appendChild(b); s.appendChild(t);
+    return s;
+  }
+
+  function renderStats(a){
+    var box = el("stats");
+    box.textContent = "";
+    var stats = document.createElement("div");
+    stats.className = "stats";
+    stats.appendChild(statBlock(a.on.toLocaleString("de-DE"), "Tage mit Eintrag"));
+    stats.appendChild(statBlock(Math.round(a.on / a.total * 100) + " %", "von " + a.total.toLocaleString("de-DE") + " Tagen"));
+    stats.appendChild(statBlock(
+      Math.round(a.recentOn / a.window * 100) + " %",
+      a.window === 365
+        ? "letzte 365 Tage · " + a.recentOn + " Tage"
+        : "gesamter Zeitraum, nur " + a.window + " Tage"
+    ));
+    stats.appendChild(statBlock(a.best, a.best === 1 ? "längste Serie (Tag)" : "längste Serie (Tage)"));
+    stats.appendChild(statBlock(a.current, "Serie bis " + fmt(a.end)));
+    box.appendChild(stats);
+  }
+
+  /* ---------- Monatsansicht ---------- */
+
+  function monthKey(y, m){ return y * 12 + m; }
+
+  function renderMonth(){
+    var a = state, box = el("viewMonth");
+    box.textContent = "";
+
+    var y = cursor.y, m = cursor.m;
+    var firstOfMonth = new Date(y, m, 1);
+    var daysInMonth = new Date(y, m + 1, 0).getDate();
+
+    var count = 0, inRange = 0;
+    for (var i = 1; i <= daysInMonth; i++){
+      var dd = new Date(y, m, i);
+      if (dd >= a.start && dd <= a.end){
+        inRange++;
+        if (a.map[iso(dd)] === 1) count++;
+      }
+    }
+
+    var nav = document.createElement("div");
+    nav.className = "navbar";
+    var h = document.createElement("h2");
+    h.textContent = MONTHS[m] + " " + y;
+    var c = document.createElement("span");
+    c.className = "count";
+    c.textContent = inRange ? (count + " von " + inRange + " Tagen") : "keine Daten in diesem Monat";
+    var arrows = document.createElement("div");
+    arrows.className = "arrows";
+
+    var lo = monthKey(a.start.getFullYear(), a.start.getMonth());
+    var last = mode === "live" ? today() : a.end;
+    var hi = monthKey(last.getFullYear(), last.getMonth());
+    var here = monthKey(y, m);
+
+    var prev = document.createElement("button");
+    prev.textContent = "‹"; prev.setAttribute("aria-label", "Vorheriger Monat");
+    prev.disabled = here <= lo;
+    prev.addEventListener("click", function(){ step(-1); });
+
+    var next = document.createElement("button");
+    next.textContent = "›"; next.setAttribute("aria-label", "Nächster Monat");
+    next.disabled = here >= hi;
+    next.addEventListener("click", function(){ step(1); });
+
+    arrows.appendChild(prev); arrows.appendChild(next);
+    nav.appendChild(h); nav.appendChild(c); nav.appendChild(arrows);
+    box.appendChild(nav);
+
+    var grid = document.createElement("div");
+    grid.className = "month";
+    DOW.forEach(function(name){
+      var d = document.createElement("div");
+      d.className = "dow"; d.textContent = name;
+      grid.appendChild(d);
+    });
+
+    var pad = (firstOfMonth.getDay() + 6) % 7;
+    for (var p = 0; p < pad; p++){
+      var e = document.createElement("div");
+      e.className = "day pad";
+      grid.appendChild(e);
+    }
+
+    var t = today();
+    for (var n = 1; n <= daysInMonth; n++){
+      var date = new Date(y, m, n);
+      var key = iso(date);
+      var cell = document.createElement("div");
+      var outside = date < a.start || date > last;
+      var busy = key in pending;
+      var on = busy ? pending[key] === 1 : a.map[key] === 1;
+      cell.className = "day" + (outside ? " outside" : (on ? " on" : ""))
+        + (!outside && mode === "live" ? " tap" : "")
+        + (+date === +t ? " today" : "")
+        + (busy ? " busy" : "");
+      cell.textContent = n;
+      cell.title = fmt(date) + (outside ? " · außerhalb der Daten" : (on ? " · ja" : " · nein"));
+      if (!outside && mode === "live"){
+        cell.setAttribute("role", "button");
+        cell.setAttribute("tabindex", "0");
+        cell.setAttribute("aria-pressed", String(on));
+        cell.setAttribute("aria-label", fmt(date) + (on ? ", ja" : ", nein"));
+        cell.addEventListener("click", toggle.bind(null, date));
+        cell.addEventListener("keydown", function(d, e){
+          if (e.key === "Enter" || e.key === " "){ e.preventDefault(); toggle(d); }
+        }.bind(null, date));
+      }
+      grid.appendChild(cell);
+    }
+
+    box.appendChild(grid);
+  }
+
+  function step(delta){
+    var m = cursor.m + delta, y = cursor.y;
+    if (m < 0){ m = 11; y--; }
+    if (m > 11){ m = 0; y++; }
+    cursor = { y: y, m: m };
+    renderMonth();
+  }
+
+  /* ---------- Jahresansicht ---------- */
+
+  function yearGrid(year, days){
+    var wrap = document.createElement("section");
+    wrap.className = "year";
+    var onCount = days.filter(function(d){ return d.on; }).length;
+
+    var h = document.createElement("h2");
+    h.textContent = year;
+    var em = document.createElement("em");
+    em.textContent = onCount + " von " + days.length + " erfassten Tagen · " + Math.round(onCount/days.length*100) + " %";
+    h.appendChild(em);
+    wrap.appendChild(h);
+
+    var scroll = document.createElement("div");
+    scroll.className = "scroll";
+    var grid = document.createElement("div");
+    grid.className = "grid";
+
+    var firstDow = (days[0].date.getDay() + 6) % 7;
+    for (var p = 0; p < firstDow; p++){
+      var padCell = document.createElement("div");
+      padCell.className = "cell void";
+      grid.appendChild(padCell);
+    }
+
+    var monthCols = [];
+    days.forEach(function(day, i){
+      var c = document.createElement("div");
+      c.className = "cell" + (day.on ? " on" : "");
+      c.title = fmt(day.date) + (day.on ? " · ja" : " · nein");
+      grid.appendChild(c);
+      var col = Math.floor((i + firstDow) / 7);
+      var mm = day.date.getMonth();
+      if (!monthCols.length || monthCols[monthCols.length-1].m !== mm) monthCols.push({ m: mm, col: col });
+    });
+
+    var totalCols = Math.ceil((days.length + firstDow) / 7);
+    var months = document.createElement("div");
+    months.className = "months";
+    months.style.gridTemplateColumns = "repeat(" + totalCols + ", 11px)";
+    monthCols.forEach(function(entry, i){
+      var nextCol = monthCols[i+1] ? monthCols[i+1].col : totalCols;
+      var span = Math.max(1, nextCol - entry.col);
+      var lbl = document.createElement("div");
+      lbl.style.gridColumn = (entry.col + 1) + " / span " + span;
+      lbl.textContent = span >= 3 ? MSHORT[entry.m] : "";
+      months.appendChild(lbl);
+    });
+
+    scroll.appendChild(months);
+    scroll.appendChild(grid);
+    wrap.appendChild(scroll);
+    return wrap;
+  }
+
+  function renderYears(){
+    var a = state, box = el("viewYear");
+    box.textContent = "";
+    var byYear = {};
+    a.days.forEach(function(d){
+      var y = d.date.getFullYear();
+      (byYear[y] = byYear[y] || []).push(d);
+    });
+    Object.keys(byYear).sort().reverse().forEach(function(y){
+      box.appendChild(yearGrid(y, byYear[y]));
+    });
+
+    var legend = document.createElement("div");
+    legend.className = "legend";
+    var no = document.createElement("span"); no.className = "cell";
+    var yes = document.createElement("span"); yes.className = "cell on";
+    legend.appendChild(no);
+    legend.appendChild(document.createTextNode("nein"));
+    legend.appendChild(yes);
+    legend.appendChild(document.createTextNode("ja · Zeitraum " + fmt(a.start) + " bis " + fmt(a.end)));
+    box.appendChild(legend);
+  }
+
+  /* ---------- Ansicht wechseln ---------- */
+
+  function setView(which){
+    var isMonth = which === "month";
+    el("viewMonth").classList.toggle("hidden", !isMonth);
+    el("viewYear").classList.toggle("hidden", isMonth);
+    el("tabMonth").setAttribute("aria-pressed", String(isMonth));
+    el("tabYear").setAttribute("aria-pressed", String(!isMonth));
+    if (!isMonth) renderYears();
+  }
+
+  el("tabMonth").addEventListener("click", function(){ setView("month"); });
+  el("tabYear").addEventListener("click", function(){ setView("year"); });
+
+  document.addEventListener("keydown", function(e){
+    if (!state || el("viewMonth").classList.contains("hidden")) return;
+    if (e.key === "ArrowLeft") step(-1);
+    if (e.key === "ArrowRight") step(1);
+  });
+
+  /* ---------- Steuerung ---------- */
+
+  var renderedMode = "";
+
+  function render(map){
+    var first = !state;
+    state = analyse(map, evalEnd(map));
+    if (first || !cursor || mode !== renderedMode){
+      renderedMode = mode;
+      var c = mode === "live" ? today() : state.end;
+      cursor = { y: c.getFullYear(), m: c.getMonth() };
+    }
+
+    renderStats(state);
+    renderMonth();
+    if (first) setView("month");
+    else if (!el("viewYear").classList.contains("hidden")) renderYears();
+
+    out.classList.remove("hidden");
+    load.classList.add("compact");
+    updateStatus();
+  }
+
+  function clock(d){
+    return String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
+  }
+
+  function updateStatus(){
+    var cfg = config();
+    el("reload").classList.toggle("hidden", !cfg);
+    el("reload").disabled = loading;
+    el("settings").textContent = cfg ? "Verbindung" : "Verbindung einrichten";
+    load.classList.toggle("stale", mode !== "live" && !!state);
+
+    var text;
+    if (loading && !state){
+      text = "Lade aktuellen Stand …";
+    } else if (!state){
+      text = cfg ? "Noch kein Stand geladen." : "Noch keine Verbindung eingerichtet. Ohne Verbindung lässt sich unten eine CSV-Datei ansehen.";
+    } else if (mode === "live"){
+      text = "Aktueller Stand, geladen um " + clock(loadedAt) + ". Tippe einen Tag an, um ihn zu ändern.";
+      if (remote && remote.lock) text = "Aktueller Stand, geladen um " + clock(loadedAt) + ". Nur Ansicht: " + remote.lock;
+    } else if (mode === "file"){
+      text = "Aus einer Datei geöffnet: " + state.total.toLocaleString("de-DE") + " Tage bis " + fmt(state.end)
+        + ". Nur Ansicht, Änderungen werden nicht gespeichert.";
+    } else {
+      text = "Zwischenstand vom " + fmt(new Date(fromCache)) + " " + clock(new Date(fromCache))
+        + ", letzter Tag darin: " + fmt(state.end) + ". "
+        + (loading ? "Lade aktuellen Stand …" : "Ändern geht erst wieder mit Verbindung.");
+    }
+    loadText.textContent = text;
+  }
+
+  function showError(msg){
+    errBox.textContent = msg;
+    errBox.classList.toggle("hidden", !msg);
+  }
+
+  function show(text, remember){
+    try {
+      var map = parse(text);
+      render(map);
+      if (remember){
+        fromCache = Date.now();
+        try { localStorage.setItem(KEY, JSON.stringify({ text: text, savedAt: fromCache })); } catch (e){}
+      }
+      return true;
+    } catch (e){
+      showError(e.message);
+      return false;
+    }
+  }
+
+  /* ---------- Verbindung zu GitHub ---------- */
+
+  function config(){
+    try {
+      var c = JSON.parse(localStorage.getItem(CFG) || "null");
+      if (c && c.owner && c.repo && c.path && c.token) return c;
+    } catch (e){}
+    return null;
+  }
+
+  function b64decode(s){
+    var bin = atob(String(s).replace(/\s/g, ""));
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder("utf-8").decode(bytes);
+  }
+
+  function b64encode(text){
+    var bytes = new TextEncoder().encode(text), bin = "";
+    for (var i = 0; i < bytes.length; i += 0x8000){
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    }
+    return btoa(bin);
+  }
+
+  function explain(status, body){
+    var msg = (body && body.message) || "";
+    if (status === 401) return "GitHub lehnt den Token ab – vermutlich abgelaufen oder widerrufen. Unter „Verbindung“ einen neuen eintragen.";
+    if (status === 403 && /rate limit/i.test(msg)) return "GitHub meldet zu viele Anfragen. In ein paar Minuten erneut versuchen.";
+    if (status === 403) return "Der Token darf das nicht. Er braucht für dieses Repository „Contents: Read and write“.";
+    if (status === 404) return "Konto, Repository oder Datei nicht gefunden – oder der Token hat keinen Zugriff darauf.";
+    if (status === 409) return "Die Datei wurde gleichzeitig von einem anderen Gerät geändert. Bitte neu laden.";
+    return "GitHub antwortet mit Fehler " + status + (msg ? ": " + msg : ".");
+  }
+
+  function api(method, body, cfg){
+    var c = cfg || config();
+    var url = API + "/repos/" + encodeURIComponent(c.owner) + "/" + encodeURIComponent(c.repo)
+      + "/contents/" + c.path.split("/").map(encodeURIComponent).join("/");
+    var opts = {
+      method: method,
+      cache: "no-store",
+      headers: {
+        "Accept": "application/vnd.github+json",
+        "Authorization": "Bearer " + c.token,
+        "X-GitHub-Api-Version": "2022-11-28"
+      }
+    };
+    if (body){
+      opts.headers["Content-Type"] = "application/json";
+      opts.body = JSON.stringify(body);
+    }
+    return fetch(url, opts).then(function(r){
+      if (r.ok) return r.json();
+      return r.json().catch(function(){ return {}; }).then(function(j){
+        var e = new Error(explain(r.status, j));
+        e.status = r.status;
+        throw e;
+      });
+    }, function(){
+      var e = new Error("Keine Verbindung zu GitHub.");
+      e.status = 0;
+      throw e;
+    });
+  }
+
+  // Strenges Lesen für das Schreiben: nur date,done,source, jede Zeile muss passen.
+  // Sonst wird das Schreiben gesperrt, damit keine Zeile verloren geht.
+  function parseRows(text){
+    var lines = text.replace(/\r/g, "").split("\n");
+    var head = (lines.shift() || "").split(",").map(function(h){ return h.trim().toLowerCase(); }).join(",");
+    if (head !== "date,done,source") throw new Error("Die Datei hat nicht die Spalten date,done,source.");
+    var rows = Object.create(null);
+    lines.forEach(function(line, i){
+      if (line.trim() === "") return;
+      var c = line.split(",").map(function(s){ return s.trim(); });
+      if (c.length !== 3 || !/^\d{4}-\d{2}-\d{2}$/.test(c[0]) || !/^[01]$/.test(c[1]) || !c[2]){
+        throw new Error("Zeile " + (i + 2) + " hat ein unerwartetes Format: " + line);
+      }
+      rows[c[0]] = { done: +c[1], source: c[2] };
+    });
+    if (!Object.keys(rows).length) throw new Error("Die Datei enthält keine Tage.");
+    return rows;
+  }
+
+  function serialize(rows){
+    return "date,done,source\n" + Object.keys(rows).sort().map(function(k){
+      return k + "," + rows[k].done + "," + rows[k].source;
+    }).join("\n") + "\n";
+  }
+
+  function copyRows(rows){
+    var c = Object.create(null);
+    Object.keys(rows).forEach(function(k){ c[k] = { done: rows[k].done, source: rows[k].source }; });
+    return c;
+  }
+
+  function fetchRemote(cfg){
+    return api("GET", null, cfg).then(function(j){
+      if (j.type !== "file" || j.encoding !== "base64" || typeof j.content !== "string"){
+        throw new Error("Unter diesem Pfad liegt keine lesbare Datei (oder sie ist größer als 1 MB).");
+      }
+      var text = b64decode(j.content);
+      var r = { sha: j.sha, text: text, rows: null, lock: "" };
+      try { r.rows = parseRows(text); } catch (e){ r.lock = e.message; }
+      return r;
+    });
+  }
+
+  // Alle vergangenen Tage ohne Eintrag bis einschließlich gestern – nie heute.
+  function missingDays(rows){
+    var keys = Object.keys(rows).sort(), outList = [];
+    var d = parseDate(keys[0]), until = addDays(today(), -1);
+    while (d <= until){
+      if (!rows[iso(d)]) outList.push(iso(d));
+      d = addDays(d, 1);
+    }
+    return outList;
+  }
+
+  // Schreibt eine Änderung. Aufträge laufen nacheinander; bei gleichzeitiger
+  // Änderung von einem anderen Gerät wird neu geladen und die Änderung erneut
+  // auf den frischen Stand angewendet.
+  function write(change){
+    var job = queue.then(function(){ return attempt(3); });
+    queue = job.catch(function(){});
+    return job;
+
+    function attempt(left){
+      if (!remote || !remote.rows) return Promise.reject(new Error(remote && remote.lock ? "Nur Ansicht: " + remote.lock : "Kein Stand geladen."));
+      var rows = copyRows(remote.rows);
+      var message = change(rows);
+      if (!message) return Promise.resolve(false);
+      var text = serialize(rows);
+      return api("PUT", { message: message, content: b64encode(text), sha: remote.sha }).then(function(j){
+        remote = { sha: j.content.sha, text: text, rows: rows, lock: "" };
+        loadedAt = new Date();
+        return true;
+      }, function(e){
+        if ((e.status === 409 || e.status === 422) && left > 1){
+          return fetchRemote().then(function(r){
+            remote = r;
+            loadedAt = new Date();
+            return attempt(left - 1);
+          });
+        }
+        throw e;
+      });
+    }
+  }
+
+  function autofill(){
+    if (!remote || !remote.rows || !missingDays(remote.rows).length) return Promise.resolve(false);
+    return write(function(rows){
+      var miss = missingDays(rows);
+      if (!miss.length) return null;
+      miss.forEach(function(k){ rows[k] = { done: 0, source: "auto" }; });
+      return miss.length === 1
+        ? "Aufgefüllt: " + miss[0] + " ohne Eintrag, 0 (auto)"
+        : "Aufgefüllt: " + miss.length + " Tage ohne Eintrag, " + miss[0] + " bis " + miss[miss.length-1] + ", 0 (auto)";
+    });
+  }
+
+  function goLive(){
+    mode = "live";
+    showError("");
+    show(remote.text, true);
+  }
+
+  function startLive(){
+    if (!config() || loading) return Promise.resolve();
+    loading = true;
+    updateStatus();
+    return fetchRemote().then(function(r){
+      remote = r;
+      loadedAt = new Date();
+      loading = false;
+      goLive();
+      return autofill().then(function(changed){ if (changed) goLive(); });
+    }).catch(function(e){
+      loading = false;
+      if (mode === "live") mode = "cache";
+      showError(e.message);
+      if (state) render(state.map);
+      else updateStatus();
+    });
+  }
+
+  function toggle(date){
+    var key = iso(date), t = today();
+    if (mode !== "live" || key in pending || date > t) return;
+    if (remote && remote.lock){ showError("Nur Ansicht: " + remote.lock); return; }
+    var now = state.map[key] === 1 ? 0 : 1;
+    if (date < addDays(t, -1) && !confirm(fmt(date) + " auf „" + (now ? "ja" : "nein") + "“ setzen?")) return;
+
+    pending[key] = now;
+    showError("");
+    renderMonth();
+
+    write(function(rows){
+      if (rows[key] && rows[key].done === now) return null;
+      rows[key] = { done: now, source: "web" };
+      return "Eintrag " + key + ": " + now;
+    }).then(function(){
+      delete pending[key];
+      goLive();
+    }, function(e){
+      delete pending[key];
+      showError(e.message + " Der Tag wurde nicht geändert.");
+      if (e.status === 0) mode = "cache";
+      render(state.map);
+    });
+  }
+
+  /* ---------- Einrichtung ---------- */
+
+  var setup = el("setup");
+
+  function openSetup(){
+    var c = config() || {};
+    el("cfgOwner").value = c.owner || "";
+    el("cfgRepo").value = c.repo || "";
+    el("cfgPath").value = c.path || "";
+    el("cfgToken").value = "";
+    el("cfgToken").placeholder = c.token ? "gespeichert – leer lassen, um ihn zu behalten" : "";
+    el("disconnect").classList.toggle("hidden", !c.token);
+    el("cancelSetup").classList.toggle("hidden", !c.token);
+    el("setupErr").classList.add("hidden");
+    setup.classList.remove("hidden");
+    load.classList.add("hidden");
+  }
+
+  function closeSetup(){
+    setup.classList.add("hidden");
+    load.classList.remove("hidden");
+  }
+
+  setup.addEventListener("submit", function(e){
+    e.preventDefault();
+    var old = config() || {};
+    var cfg = {
+      owner: el("cfgOwner").value.trim(),
+      repo: el("cfgRepo").value.trim(),
+      path: el("cfgPath").value.trim().replace(/^\/+/, "") || "daten.csv",
+      token: el("cfgToken").value.trim() || old.token || ""
+    };
+    var errEl = el("setupErr");
+    if (!cfg.owner || !cfg.repo || !cfg.token){
+      errEl.textContent = "Konto, Repository und Token werden gebraucht.";
+      errEl.classList.remove("hidden");
+      return;
+    }
+    el("connect").disabled = true;
+    errEl.classList.add("hidden");
+    fetchRemote(cfg).then(function(r){
+      try { localStorage.setItem(CFG, JSON.stringify(cfg)); } catch (x){}
+      remote = r;
+      loadedAt = new Date();
+      el("connect").disabled = false;
+      closeSetup();
+      goLive();
+      return autofill().then(function(changed){ if (changed) goLive(); }, function(x){ showError(x.message); });
+    }, function(x){
+      el("connect").disabled = false;
+      errEl.textContent = x.message + " Nichts wurde gespeichert.";
+      errEl.classList.remove("hidden");
+    });
+  });
+
+  el("cancelSetup").addEventListener("click", closeSetup);
+  el("disconnect").addEventListener("click", function(){
+    if (!confirm("Verbindung trennen? Token und Zwischenstand werden aus diesem Browser entfernt. Die Datei im Repository bleibt unberührt.")) return;
+    try { localStorage.removeItem(CFG); localStorage.removeItem(KEY); } catch (x){}
+    location.reload();
+  });
+  el("settings").addEventListener("click", openSetup);
+  el("reload").addEventListener("click", function(){ startLive(); });
+
+  /* ---------- Datei öffnen (nur Ansicht) ---------- */
+
+  function readFile(f){
+    var r = new FileReader();
+    r.onload = function(){
+      mode = "file";
+      showError("");
+      closeSetup();
+      pending = Object.create(null);
+      show(String(r.result), false);
+    };
+    r.onerror = function(){ showError("Die Datei konnte nicht gelesen werden."); };
+    r.readAsText(f, "utf-8");
+  }
+
+  el("pick").addEventListener("click", function(){ el("file").click(); });
+  el("file").addEventListener("change", function(e){
+    if (e.target.files && e.target.files[0]) readFile(e.target.files[0]);
+  });
+
+  ["dragenter","dragover"].forEach(function(ev){
+    document.addEventListener(ev, function(e){ e.preventDefault(); document.body.classList.add("dragging"); });
+  });
+  ["dragleave","drop"].forEach(function(ev){
+    document.addEventListener(ev, function(e){ e.preventDefault(); document.body.classList.remove("dragging"); });
+  });
+  document.addEventListener("drop", function(e){
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0]);
+  });
+
+  /* ---------- Start ---------- */
+
+  try {
+    var raw = localStorage.getItem(KEY);
+    if (raw){
+      var cached = JSON.parse(raw);
+      fromCache = cached.savedAt || 0;
+      mode = "cache";
+      show(cached.text, false);
+    }
+  } catch (e){}
+
+  if (config()) startLive();
+  else { updateStatus(); if (!state) openSetup(); }
+
+  // Beim Zurückkehren zur Seite (z. B. aus einer anderen App) neu laden,
+  // wenn der letzte Stand älter als eine Minute ist oder ein neuer Tag begonnen hat.
+  document.addEventListener("visibilitychange", function(){
+    if (document.visibilityState !== "visible" || !config() || mode === "file") return;
+    if (Object.keys(pending).length) return;
+    if (!loadedAt || Date.now() - loadedAt > 60000 || iso(loadedAt) !== iso(today())) startLive();
+  });
+})();
+</script>
+</body>
+</html>
